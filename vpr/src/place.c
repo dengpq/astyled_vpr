@@ -232,7 +232,7 @@ void try_place(struct s_placer_opts  placer_opts,
      * the place_cost_type is NONLINEAR_CONG.                                */
     char msg[BUFSIZE];
 
-    float success_rat, d_max, est_crit;
+    float success_rat, critical_delay, est_crit;
     float oldt;
     float place_delay_value;
 
@@ -273,7 +273,7 @@ void try_place(struct s_placer_opts  placer_opts,
         load_timing_graph_net_delays(net_delay);
 
         /* each tedge's slack was determined by its delay! */
-        d_max = load_net_slack(net_slack, 0); /* */
+        critical_delay = load_net_slack(net_slack, 0); /* */
         print_critical_path("Placement_Lower_Bound.echo");
         print_sink_delays("Placement_Lower_Bound_Sink_Delays.echo");
 
@@ -281,7 +281,7 @@ void try_place(struct s_placer_opts  placer_opts,
           this tells us how much logic delay is on each path*/
         load_constant_net_delay(net_delay, 0);
         load_timing_graph_net_delays(net_delay);
-        d_max = load_net_slack(net_slack, 0);
+        critical_delay = load_net_slack(net_slack, 0);
         print_sink_delays("Placement_Logic_Sink_Delays.echo");
 #endif
     } /* end of allocate and initial delay_lookup_matrix before initial placement */
@@ -323,14 +323,17 @@ void try_place(struct s_placer_opts  placer_opts,
     int   num_connections = 0;
     int inet, ipin, outer_crit_iter_count, inner_crit_iter_count;
 
-    /* Now compute initial_cost after initial placement  */
+    /*=========   Now compute initial_cost after initial placement    ========*/
     if (placer_opts.place_algorithm == NET_TIMING_DRIVEN_PLACE ||
             placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) { /* for Timing-Driven Placer */
 
         bb_cost = comp_bb_cost(NORMAL, placer_opts.place_cost_type,
                                placer_opts.num_regions);
+
         crit_exponent = placer_opts.td_place_exp_first; /*this will be modified when rlim starts to change*/
+
         compute_net_pin_index_values();
+
         num_connections = count_connections();
         printf("\nThere are %d point to point connections in this circuit\n\n",
                 num_connections);
@@ -339,15 +342,19 @@ void try_place(struct s_placer_opts  placer_opts,
             for (inet = 0; inet < num_nets; ++inet) {
                 for (ipin = 1; ipin < net[inet].num_pins; ++ipin) {
                     timing_place_crit[inet][ipin] = 0; /*dummy crit values*/
-                }
+                } /* <source, sink> */
             }
-            /*first pass gets delay_cost, which is used in criticality
-             * computations in the next call to comp_td_costs.*/
+            /* first pass gets delay_cost, which is used in criticality computations *
+             * in the next call to comp_td_costs.                                    */
             comp_td_costs(&timing_cost, &delay_cost);
-            /*used for computing criticalities, so why did it subdivide num_connections? */
+
+            /* Used for computing criticalities, but why did it subdivide *
+             * num_connections? (FIXME)                                   */
             place_delay_value = delay_cost / num_connections;
-            /* for NET_TIMING_DRIVEN_PLACE, all subnets of a net had same delay value */
-            load_constant_net_delay(net_delay, place_delay_value);
+
+            /* For NET_TIMING_DRIVEN_PLACE, all subnets of a net had same delay  *
+             * value. so float net_delay[][] had same value for all connections. */
+            load_constant_net_delay(net_delay, place_delay_value); /* same value */
         } else {
             place_delay_value = 0;
         }
@@ -356,21 +363,24 @@ void try_place(struct s_placer_opts  placer_opts,
             /* this keeps net_delay up to date with the same values that *
              * the placer is using point_to_point_delay_cost is computed *
              * each time that comp_td_costs is called, and is also       *
-             * updated after any swap is accepted                        */
+             * updated after any swap is accepted.                       */
             net_delay = point_to_point_delay_cost; /* why? */
         }
 
-        /* Initialize all edges' delay in Timing_Analyze_Graph. */
+        /* Initialize all edges' delay(Tdel) in Timing_Analyze_Graph. */
         load_timing_graph_net_delays(net_delay);
+
         /* Compute each tnode's T_req and T_arr time, and calculate the max_delay *
          * in critical path.                                                      */
-        d_max = load_net_slack(net_slack, 0);
-        /* Calculate all tedges's criticality in Timing_Analyze_Graph */
-        load_criticalities(placer_opts, net_slack, d_max, crit_exponent);
-        /*now we can properly compute costs  */
-        comp_td_costs(&timing_cost, &delay_cost); /*also puts proper values into point_to_point_delay_cost*/
+        critical_delay = load_net_slack(net_slack, 0);
 
-        /* the auto-normalized variables used for compute placement cost. */
+        /* Calculate all tedges's criticality in Timing_Analyze_Graph */
+        load_criticalities(placer_opts, net_slack, critical_delay, crit_exponent);
+
+        /* Finally, we calculate the timing_cost of initial placement. */
+        comp_td_costs(&timing_cost, &delay_cost);
+
+        /* FIXME:the auto-normalized variables used for compute placement cost. */
         inverse_prev_timing_cost = 1 / timing_cost;
         inverse_prev_bb_cost = 1 / bb_cost;
 
@@ -389,7 +399,7 @@ void try_place(struct s_placer_opts  placer_opts,
         place_delay_value = 0;
         outer_crit_iter_count = 0;
         num_connections = 0;
-        d_max = 0;
+        critical_delay = 0;
         crit_exponent = 0;
         inverse_prev_timing_cost = 0; /*inverses not used */
         inverse_prev_bb_cost = 0;
@@ -415,8 +425,9 @@ void try_place(struct s_placer_opts  placer_opts,
         move_lim = 1;
     }
 
+    /* rlim was used in timing-driven placement for exponent computation*/
     float rlim = (float)max(nx, ny);
-    float first_rlim = rlim; /*used in timing-driven placement for exponent computation*/
+    float first_rlim = rlim; 
     float final_rlim = 1;
     float inverse_delta_rlim = 1 / (first_rlim - final_rlim);
 
@@ -437,21 +448,23 @@ void try_place(struct s_placer_opts  placer_opts,
            cost, bb_cost, timing_cost, delay_cost);
 #ifndef SPEC
     printf("%11s  %10s %11s  %11s  %11s %11s  %11s %9s %8s  %7s  %7s  %10s  %7s\n", "T", "Cost", "Av. BB Cost",
-           "Av. TD Cost", "Av Tot Del", "P to P Del", "d_max", "Ac Rate", "Std Dev", "R limit", "Exp",
+           "Av. TD Cost", "Av Tot Del", "P to P Del", "critical_delay", "Ac Rate", "Std Dev", "R limit", "Exp",
            "Tot. Moves", "Alpha");
     printf("%11s  %10s %11s  %11s  %11s %11s  %11s %9s %8s  %7s  %7s  %10s  %7s\n", "--------", "----------",
            "-----------", "-----------", "---------", "----------", "-----", "-------", "-------",  "-------",
            "-------", "----------", "-----");
 #endif
     sprintf(msg, "Initial Placement.  Cost: %g  BB Cost: %g  TD Cost %g  Delay Cost: %g "
-            "\t d_max %g Channel Factor: %d",
-            cost, bb_cost, timing_cost, delay_cost, d_max, width_fac);
+            "\t critical_delay %g Channel Factor: %d",
+            cost, bb_cost, timing_cost, delay_cost, critical_delay, width_fac);
     update_screen(MAJOR, msg, PLACEMENT, FALSE);
 
     /* outer loop of SA-based Placement */
     int inner_iter = 0;
-    double av_cost, av_bb_cost, av_timing_cost, av_delay_cost, sum_of_squares, std_dev;
+    double av_cost, av_bb_cost, av_timing_cost, av_delay_cost;
+    double sum_of_squares, std_dev;
     int success_sum = 0;
+
     while (exit_crit(t, cost, annealing_sched) == 0) { /* FIXME: outer loop of VPR */
         if (placer_opts.place_algorithm == NET_TIMING_DRIVEN_PLACE ||
                 placer_opts.place_algorithm == PATH_TIMING_DRIVEN_PLACE) {
@@ -488,9 +501,10 @@ void try_place(struct s_placer_opts  placer_opts,
                 load_timing_graph_net_delays(net_delay);
                 /* Compute each tnode's T_req and T_arr time, and calculate *
                  * the max_delay in critical path.                          */
-                d_max = load_net_slack(net_slack, 0);
+                critical_delay = load_net_slack(net_slack, 0);
                 /* Calculate all tedges's criticality in Timing_Analyze_Graph */
-                load_criticalities(placer_opts, net_slack, d_max, crit_exponent);
+                load_criticalities(placer_opts, net_slack, critical_delay, crit_exponent);
+
                 /*recompute costs from scratch, based on new criticalities*/
                 comp_td_costs(&timing_cost, &delay_cost);
                 outer_crit_iter_count = 0;
@@ -538,8 +552,8 @@ void try_place(struct s_placer_opts  placer_opts,
                     }
 
                     load_timing_graph_net_delays(net_delay);
-                    d_max = load_net_slack(net_slack, 0);
-                    load_criticalities(placer_opts, net_slack, d_max, crit_exponent);
+                    critical_delay = load_net_slack(net_slack, 0);
+                    load_criticalities(placer_opts, net_slack, critical_delay, crit_exponent);
                     comp_td_costs(&timing_cost, &delay_cost);
                 } /* Compute Timing-Driven Placement cost */
                 ++inner_crit_iter_count;
@@ -547,7 +561,7 @@ void try_place(struct s_placer_opts  placer_opts,
 
 #ifdef VERBOSE
             printf("t = %g  cost = %g   bb_cost = %g timing_cost = %g move = %d dmax = %g\n",
-                   t, cost, bb_cost, timing_cost, inner_iter, d_max);
+                   t, cost, bb_cost, timing_cost, inner_iter, critical_delay);
 
             if (fabs(bb_cost - comp_bb_cost(CHECK, placer_opts.place_cost_type,
                                             placer_opts.num_regions)) > bb_cost * ERROR_TOL) {
@@ -622,7 +636,7 @@ void try_place(struct s_placer_opts  placer_opts,
 #ifndef SPEC
         printf("%11.5g  %10.6g %11.6g  %11.6g  %11.6g %11.6g %11.4g %9.4g %8.3g  %7.4g  %7.4g  %10d  ", t, av_cost,
                av_bb_cost, av_timing_cost, av_delay_cost, place_delay_value,
-               d_max, success_rat, std_dev, rlim, crit_exponent, tot_iter);
+               critical_delay, success_rat, std_dev, rlim, crit_exponent, tot_iter);
 #endif
 
         /* FIXME: update_temperature */
@@ -633,8 +647,8 @@ void try_place(struct s_placer_opts  placer_opts,
         printf("%7.4g\n", t / oldt);
 #endif
 
-        sprintf(msg, "Cost: %g  BB Cost %g  TD Cost %g  Temperature: %g  d_max: %g", cost,
-                bb_cost, timing_cost, t, d_max);
+        sprintf(msg, "Cost: %g  BB Cost %g  TD Cost %g  Temperature: %g  critical_delay: %g", cost,
+                bb_cost, timing_cost, t, critical_delay);
         update_screen(MINOR, msg, PLACEMENT, FALSE);
 
         /* FIXME: update range_limit */
@@ -679,8 +693,8 @@ void try_place(struct s_placer_opts  placer_opts,
             }
 
             load_timing_graph_net_delays(net_delay);
-            d_max = load_net_slack(net_slack, 0);
-            load_criticalities(placer_opts, net_slack, d_max, crit_exponent);
+            critical_delay = load_net_slack(net_slack, 0);
+            load_criticalities(placer_opts, net_slack, critical_delay, crit_exponent);
             /*recompute criticaliies */
             comp_td_costs(&timing_cost, &delay_cost);
             outer_crit_iter_count = 0;
@@ -724,8 +738,8 @@ void try_place(struct s_placer_opts  placer_opts,
                     }
 
                     load_timing_graph_net_delays(net_delay);
-                    d_max = load_net_slack(net_slack, 0);
-                    load_criticalities(placer_opts, net_slack, d_max, crit_exponent);
+                    critical_delay = load_net_slack(net_slack, 0);
+                    load_criticalities(placer_opts, net_slack, critical_delay, crit_exponent);
                     comp_td_costs(&timing_cost, &delay_cost);
                 }
                 ++inner_crit_iter_count;
@@ -757,7 +771,7 @@ void try_place(struct s_placer_opts  placer_opts,
 #ifndef SPEC
     printf("After low-temperature SA-Based Placement, print the result......\n");
     printf("%11.5g  %10.6g %11.6g  %11.6g  %11.6g %11.6g %11.4g %9.4g %8.3g  %7.4g  %7.4g  %10d  \n\n", t, av_cost,
-           av_bb_cost, av_timing_cost, av_delay_cost, place_delay_value, d_max, success_rat, std_dev,
+           av_bb_cost, av_timing_cost, av_delay_cost, place_delay_value, critical_delay, success_rat, std_dev,
            rlim, crit_exponent, tot_iter);
 
     printf("For low-temperature SA-Based Placment, success_sum = %9.4g, tot_iter = %10d, \
@@ -805,8 +819,8 @@ void try_place(struct s_placer_opts  placer_opts,
         printf("Placement Estimated Crit Path Delay: %g\n\n", est_crit);
     }
 
-    sprintf(msg, "Placement. Cost: %g  bb_cost: %g td_cost: %g Channel Factor: %d d_max: %g",
-            cost, bb_cost, timing_cost, width_fac, d_max);
+    sprintf(msg, "Placement. Cost: %g  bb_cost: %g td_cost: %g Channel Factor: %d critical_delay: %g",
+            cost, bb_cost, timing_cost, width_fac, critical_delay);
     printf("Placement. Cost: %g  bb_cost: %g  td_cost: %g  delay_cost: %g.\n",
            cost, bb_cost, timing_cost, delay_cost);
     update_screen(MAJOR, msg, PLACEMENT, FALSE);
@@ -840,11 +854,10 @@ int count_connections()
     return(count);
 }
 
+/* Computes net_pin_index[0..num_blocks-1][0..num_pins-1] array, this array  *
+ * allows us to quickly find which net connected on the pin(a block pin).    */
 static void compute_net_pin_index_values()
 {
-    /*computes net_pin_index array, this array allows us to quickley*/
-    /*find what pin on the net(a block pin corresponds to).         */
-
     /*initialize values to OPEN */
     int iblk = -1;
     int ipin = -1;
@@ -862,7 +875,7 @@ static void compute_net_pin_index_values()
 
         int netpin = -1;
         for (netpin = 0; netpin < net[inet].num_pins; ++netpin) {
-            int blk = net[inet].blocks[netpin];
+            int blk = net[inet].blocks[netpin]; /* blk_num */
             /* there is only one block pin, so it is 0, and it is driving the *
              * net since this is an INPAD.                                    */
             if (block[blk].type == INPAD) {
@@ -967,7 +980,7 @@ static int exit_crit(float t, float cost, struct s_annealing_sched annealing_sch
     } else {
         return(0);
     }
-}
+} /* end of static int exit_crit() */
 
 
 static float starting_t(float* cost_ptr, float* bb_cost_ptr, float* timing_cost_ptr,
@@ -981,20 +994,18 @@ static float starting_t(float* cost_ptr, float* bb_cost_ptr, float* timing_cost_
                         float inverse_prev_bb_cost, float inverse_prev_timing_cost,
                         float* delay_cost_ptr)
 {
-    /* Finds the starting temperature (hot condition).              */
-    int i, num_accepted, move_lim;
-    double std_dev, av, sum_of_squares;  /* Double important to avoid round off */
-
+    /* Finds the starting temperature (hot condition). */
     if (annealing_sched.type == USER_SCHED) {
         return (annealing_sched.init_t);
     }
 
-    move_lim = min(max_moves, num_blocks);
-    num_accepted = 0;
-    av = 0.;
-    sum_of_squares = 0.;
+    int move_lim = min(max_moves, num_blocks);
+    int num_accepted = 0;
+    double av = 0.;
+    double sum_of_squares = 0.;
 
     /* Try one move per block.  Set t high so essentially all accepted. */
+    int i = -1;
     for (i = 0; i < move_lim; i++) {
         if (try_swap(1.e30, cost_ptr, bb_cost_ptr, timing_cost_ptr, rlim,
                      pins_on_block, place_cost_type,
@@ -1004,7 +1015,7 @@ static float starting_t(float* cost_ptr, float* bb_cost_ptr, float* timing_cost_
                      delay_cost_ptr) == 1) {
             num_accepted++;
             av += *cost_ptr;
-            sum_of_squares += *cost_ptr * (*cost_ptr);
+            sum_of_squares += (*cost_ptr) * (*cost_ptr);
         }
     }
 
@@ -1015,7 +1026,8 @@ static float starting_t(float* cost_ptr, float* bb_cost_ptr, float* timing_cost_
         av = 0.;
     }
 
-    std_dev = get_std_dev(num_accepted, sum_of_squares, av);
+    /* Double important to avoid round off */
+    double std_dev = get_std_dev(num_accepted, sum_of_squares, av);
 #ifdef DEBUG
     if (num_accepted != move_lim) {
         printf("Warning:  Starting t: %d of %d configurations accepted.\n",
@@ -1029,13 +1041,13 @@ static float starting_t(float* cost_ptr, float* bb_cost_ptr, float* timing_cost_
 #endif
     return (20. * std_dev);
     /* return (15.225523    ); */
-}
+} /* end of static float start_t() */
 
 /* FIXME: Try to swap a pair of plbs or io_pads randomly*/
 static int try_swap(float  t,
                     float* cost, float* bb_cost, float* timing_cost,
                     float rlim, int*  pins_on_block, int place_cost_type,
-                    float**  old_region_occ_x, float**  old_region_occ_y,
+                    float** old_region_occ_x, float** old_region_occ_y,
                     int num_regions, boolean fixed_pins,
                     enum e_place_algorithm place_algorithm,
                     float timing_tradeoff,
@@ -1299,7 +1311,7 @@ static int try_swap(float  t,
     }
 
     return(keep_switch);
-}
+} /* end of static int try_swap() */
 
 
 static void save_region_occ(float** old_region_occ_x,
@@ -1647,15 +1659,15 @@ static float recompute_bb_cost(int place_cost_type, int num_regions)
  * find (delta_x, delta_y) in delay lookup matrix                         *
  * TODO: In vpr4.3, due to FPGA arch was homogeneous arch, when the arch  *
  * change to heterogeneous one, How did I compute bb_cost and td_cost?    */
-static float comp_td_point_to_point_delay(int inet, int ipin)
+static float comp_td_point_to_point_delay(int inet, int sink_pin)
 {
     /*returns the delay from a subnet source pin to sink pin(one point to point) connection */
     float delay_source_to_sink = 0.0;
 
     int source_block = net[inet].blocks[0];
-    enum e_block_types source_type = block[source_block].type; /* it maybe clb, ro io pads*/
+    enum e_block_types source_type = block[source_block].type; /* it maybe plb, or io pads*/
 
-    int sink_block = net[inet].blocks[ipin];
+    int sink_block = net[inet].blocks[sink_pin];
     enum e_block_types sink_type = block[sink_block].type;
 
     int delta_x = abs(block[sink_block].x - block[source_block].x);
@@ -1688,17 +1700,12 @@ static float comp_td_point_to_point_delay(int inet, int ipin)
         exit(1);
     }
 
-    if (delay_source_to_sink < 0) {
-        printf("Error in comp_td_point_to_point_delay in place.c, bad delay_source_to_sink value\n");
-        exit(1);
-    }
-
     if (delay_source_to_sink < 0.0) {
         printf("Error in comp_td_point_to_point_delay in place.c, delay is less than 0\n");
         exit(1);
     }
 
-    return(delay_source_to_sink);
+    return (delay_source_to_sink);
 } /* end of static float comp_td_point_to_point_delay() */
 
 
@@ -1882,52 +1889,54 @@ static void comp_delta_td_cost(int b_from, int b_to,
     *delta_delay = delta_delay_cost;
 }  /* end of static void compute_delta_td_cost() */
 
-/* FIXME: compute timing-driven costs of all signal nets */
+/* FIXME: compute timing-driven costs of all signal nets(its all subnets)  *
+ * Attention: I found this function was called by NET_TIMING_DRIVEN_PLACE. */
+/* Computes the cost(from scratch) due to the delays and criticalities on all  *
+ * point-to-point connections, we define the timing cost of each connection as *
+ * criticality * delay.                                                        */
 static void comp_td_costs(float* timing_cost, float* connection_delay_sum)
 {
-    /*computes the cost (from scratch) due to the delays and criticalities*
-     *on all point to point connections, we define the timing cost of     *
-     *each connection as criticality*delay */
     float temp_delay_cost, temp_timing_cost;
     float loc_timing_cost = 0.0;
     float loc_connection_delay_sum = 0.0;
 
     int inet , ipin;
-    for (inet = 0; inet < num_nets; inet++) { /* for each net ... */
-        if (is_global[inet] == FALSE) {    /* Do only if not global. */
-            for (ipin = 1; ipin < net[inet].num_pins; ipin++) {
-                /* FIXME: timing-driven_pin_to_pin_delay */
+    for (inet = 0; inet < num_nets; ++inet) { /* for each net ... */
+        if (is_global[inet] == FALSE) { /* Do only for signal nets. */
+            for (ipin = 1; ipin < net[inet].num_pins; ++ipin) {
+
+                /* FIXME: timing-driven_pin_to_pin_delay, from source to sink. */
                 temp_delay_cost = comp_td_point_to_point_delay(inet, ipin);
+                point_to_point_delay_cost[inet][ipin] = temp_delay_cost;
                 loc_connection_delay_sum += temp_delay_cost;
 
-                point_to_point_delay_cost[inet][ipin] = temp_delay_cost;
                 temp_point_to_point_delay_cost[inet][ipin] = -1; /*undefined*/
 
                 /* timing_cost = delay_cost * timing_place_criticality */
                 temp_timing_cost = temp_delay_cost * timing_place_crit[inet][ipin];
                 point_to_point_timing_cost[inet][ipin] = temp_timing_cost;
+                loc_timing_cost += temp_timing_cost;
+
                 /* TODO: Why?  */
                 temp_point_to_point_timing_cost[inet][ipin] = -1; /*undefined*/
-                loc_timing_cost += temp_timing_cost;
             }
         }
     }
 
     *timing_cost = loc_timing_cost;
     *connection_delay_sum = loc_connection_delay_sum;
-}
+} /* end of static void comp_td_costs() */
 
 /* compute_net_boundingbox_cost, Wirelength cost, TODO */
 static float comp_bb_cost(int method, int place_cost_type, int num_regions)
 {
-    /* Finds the cost from scratch.  Done only when the placement   *
-     * has been radically changed (i.e. after initial placement).   *
-     * Otherwise find the cost change Incrementally.  If method     *
-     * check is NORMAL, we find bounding boxes that are updateable  *
-     * for the larger nets.  If method is CHECK, all bounding boxes *
-     * are found via the non_updateable_bb routine, to provide a    *
-     * cost which can be used to check the correctness of the       *
-     * other routine.                                               */
+    /* Finds the cost from scratch. Done only when the placement has been     *
+     * radically changed(i.e. after initial placement). Otherwise find the    *
+     * cost change Incrementally. If method check is NORMAL, we find bounding *
+     * -boxes that are updateable for the larger nets. If the method is CHECK,*
+     * all bounding-boxes are found via the non_updateable_bb routine, to     *
+     * provide a cost which can be used to chekc the correctness of the other *
+     * routine.                                                               */
 
     /* Initialize occupancies to zero if regions are being used. */
     if (place_cost_type == NONLINEAR_CONG) {
@@ -1941,23 +1950,23 @@ static float comp_bb_cost(int method, int place_cost_type, int num_regions)
         }
     }
 
-    int k = -1;
+    int n = -1;
     float cost = 0.0;
-    for (k = 0; k < num_nets; ++k) { /* for each net ... */
-        if (is_global[k] == FALSE) { /* Do only if not global. */
+    for (n = 0; n < num_nets; ++n) { /* for each net ... */
+        if (is_global[n] == FALSE) { /* Do only if not global. */
             /* Small nets don't use incremental updating on their bounding boxes, *
              * so they can use a fast bounding box calculator.                    */
-            if (net[k].num_pins > SMALL_NET && method == NORMAL) { /* SMALL_NET == 4 */
-                get_bb_from_scratch(k, &bb_coords[k], &bb_num_on_edges[k]);
+            if (net[n].num_pins > SMALL_NET && method == NORMAL) { /* 4 */
+                get_bb_from_scratch(n, &bb_coords[n], &bb_num_on_edges[n]);
             } else {
-                get_non_updateable_bb(k, &bb_coords[k]);
+                get_non_updateable_bb(n, &bb_coords[n]);
             }
 
             if (place_cost_type != NONLINEAR_CONG) {
-                net_cost[k] = get_net_cost(k, &bb_coords[k]);
-                cost += net_cost[k];
+                net_cost[n] = get_net_cost(n, &bb_coords[n]);
+                cost += net_cost[n];
             } else {    /* Must be nonlinear_cong case. */
-                update_region_occ(k, &bb_coords[k], 1, num_regions);
+                update_region_occ(n, &bb_coords[n], 1, num_regions);
             }
         }
     }
@@ -2447,20 +2456,19 @@ static void alloc_and_load_unique_pin_list(void)
     times_listed = NULL;
 }
 
-/* This function should only be called when the net boundingbox info is not valid */
+
+/* This routine finds the bounding-box of each net from scratch(i.e. from   *
+ * only the block location information). It updates both the coordinate and *
+ * number of blocks on each edge information. It should only be called when *
+ * the bounding-box information is not valid.                               */
 static void get_bb_from_scratch(int inet, struct s_bb* coords,
                                 struct s_bb* num_on_edges)
 {
-    /* This routine finds the bounding box of each net from scratch (i.e.    *
-     * from only the block location information).  It updates both the       *
-     * coordinate and number of blocks on each edge information.  It         *
-     * should only be called when the bounding box information is not valid. */
-    int n_pins;
-    int* plist;
-
     /* I need a list of blocks to which this net connects, with no block listed *
      * more than once, in order to get a proper count of the number on the edge *
      * of the bounding box.                                                     */
+    int n_pins;
+    int* plist;
     if (duplicate_pins[inet] == 0) {
         plist = net[inet].blocks;
         n_pins = net[inet].num_pins;
@@ -2775,7 +2783,7 @@ static void initial_placement(enum e_pad_loc_type pad_loc_type,
                               char* pad_loc_file) /* FIXME */
 {
     /* Randomly places the blocks to create an initial placement. */
-    int i, j, k, choice, isubblk;
+    int i, j, k;
     int tsize = max(nx * ny, 2 * (nx + ny));
     pos = (struct s_pos*)my_malloc(tsize * sizeof(struct s_pos));
 
@@ -2792,11 +2800,12 @@ static void initial_placement(enum e_pad_loc_type pad_loc_type,
         for (j = 1; j <= ny; j++) { /* from bottom to top */
             pos[count].x = i;
             pos[count].y = j;
-            ++count; /* total nx * ny clbs */
+            ++count; /* total nx * ny clbs clb locations */
         }
     }
 
     int iblk = -1;
+    int choice = -1;
     for (iblk = 0; iblk < num_blocks; ++iblk) { /* num_blocks = plbs + io_blocks */
         if (block[iblk].type == CLB) {     /* only place CLBs in center */
             choice = my_irand(count - 1); /* choice >= 1 && choice <= count-1*/
@@ -2813,20 +2822,23 @@ static void initial_placement(enum e_pad_loc_type pad_loc_type,
     /* Now do the io blocks around the periphery */
     if (pad_loc_type == USER) {
         read_user_pad_loc(pad_loc_file);
-    } else {  /* Now place the I/O pads randomly. */
+    } else {
+        /*========   Now place the I/O pads randomly. ========*/
         count = 0;
-        /* initila I/O pads positions in bottom and top sides */
         for (i = 1; i <= nx; ++i) {
+            /* initial I/O pad locations at BOTTEOM side*/
             pos[count].x = i;
             pos[count].y = 0;
+            /* initial I/O pad locations at TOP side */
             pos[count + 1].x = i;
             pos[count + 1].y = ny + 1;
             count += 2;
         }
-        /* assing I/O pads positions in left and right sides */
         for (j = 1; j <= ny; j++) {
+            /* initial I/O pad locations at LEFT side */
             pos[count].x = 0;
             pos[count].y = j;
+            /* initial I/O pad locations at RIGHT side */
             pos[count + 1].x = nx + 1;
             pos[count + 1].y = j;
             count += 2;
@@ -2835,7 +2847,9 @@ static void initial_placement(enum e_pad_loc_type pad_loc_type,
         for (iblk = 0; iblk < num_blocks; ++iblk) {
             if (block[iblk].type == INPAD || block[iblk].type == OUTPAD) {
                 choice = my_irand(count - 1);
-                isubblk = clb[pos[choice].x][pos[choice].y].occ;
+
+                int isubblk = clb[pos[choice].x][pos[choice].y].occ;
+
                 clb[pos[choice].x][pos[choice].y].u.io_blocks[isubblk] = iblk;
                 ++(clb[pos[choice].x][pos[choice].y].occ);
                 /* In an I/O pad location of FPGA chip, it may accommodate more

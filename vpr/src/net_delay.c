@@ -177,14 +177,16 @@ void load_net_delay_from_routing(float** net_delay)
 }
 
 
+/* Loads the net_delay array with delay_value for every <source, sink> connection *
+ * that is not on a global net, and with 0 for every <source, sink> connection on *
+ * a global net.(This can be used to allow timing analysis before routing is done *
+ * with a constant net delay model).                                              */
 void load_constant_net_delay(float** net_delay, float delay_value)
 {
-    /* Loads the net_delay array with delay_value for every source - sink        *
-     * connection that is not on a global resource, and with 0. for every source *
-     * - sink connection on a global net.  (This can be used to allow timing     *
-     * analysis before routing is done with a constant net delay model).         */
+    /* TODO: Why did VPR set all subnets(or connections) had same net delay value *
+     *       in NET_TIMING_DRIVEN_PLACE?                                          */
     int inet;
-    for (inet = 0; inet < num_nets; inet++) {
+    for (inet = 0; inet < num_nets; ++inet) {
         if (is_global[inet]) {
             load_one_constant_net_delay(net_delay, inet, 0.);
         } else {
@@ -194,8 +196,8 @@ void load_constant_net_delay(float** net_delay, float delay_value)
 }
 
 
-static t_rc_node* alloc_and_load_rc_tree(int inet, t_rc_node
-                                         ** rc_node_free_list_ptr, t_linked_rc_edge** rc_edge_free_list_ptr,
+static t_rc_node* alloc_and_load_rc_tree(int inet, t_rc_node** rc_node_free_list_ptr,
+                                         t_linked_rc_edge** rc_edge_free_list_ptr,
                                          t_linked_rc_ptr* rr_node_to_rc_node)
 {
     /* Builds a tree describing the routing of net inet.  Allocates all the data *

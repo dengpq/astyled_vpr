@@ -9,7 +9,7 @@
 #include "../include/timing_place.h"
 
 
-float** timing_place_crit;  /*available externally*/
+float** timing_place_crit; /*float timing_place_crit[0..num_nets-1][1..num_pins-1] */
 
 static struct s_linked_vptr* timing_place_crit_chunk_list_head;
 static struct s_linked_vptr* net_delay_chunk_list_head;
@@ -79,7 +79,7 @@ void print_sink_delays(char* fname)
  * FIXME: Calculate all tedges's criticality in Timing_Analyze_Graph *
 **********************************************************************/
 void load_criticalities(struct s_placer_opts placer_opts,
-                        float** net_slack, float d_max,
+                        float** net_slack, float crit_delay,
                         float crit_exponent)
 {
     /*set criticality values, returns the maximum criticality found*/
@@ -96,11 +96,11 @@ void load_criticalities(struct s_placer_opts placer_opts,
         /* clip the criticality to never go negative(could happen for a constant *
          * generator since it's slack is huge).                                  *
          * criticality<SOURCE, ipin> = 1 - net_slack<SOURCE, ipn>/max_delay      */
-            float pin_crit = max(1 - net_slack[inet][ipin] / d_max, 0.0);
+            float pin_crit = max(1 - net_slack[inet][ipin] / crit_delay, 0.0);
             timing_place_crit[inet][ipin] = pow(pin_crit, crit_exponent);
         }
     }
-}
+} /* end of void load_criticalities(), calculate all tedges' Timing_Criticality */
 
 /* FIXME: alloated all needed delay lookup matrix for timing-driven placement */
 void alloc_lookups_and_criticalities(t_chan_width_dist chan_width_dist,
@@ -122,8 +122,9 @@ void alloc_lookups_and_criticalities(t_chan_width_dist chan_width_dist,
     compute_delay_lookup_tables(router_opts, det_routing_arch, segment_inf,
                                 timing_inf, chan_width_dist, subblock_data);
 
+    /* allocate float** timing_crit[][] for */
     timing_place_crit = alloc_crit(&timing_place_crit_chunk_list_head);
-}
+} /* end of allocate 4 delay-lookup-matrix and timing_crit. */
 
 /**************************************/
 void free_lookups_and_criticalities(float*** net_delay, float*** net_slack)

@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "util.h"
-#include "graphics.h"
-#include "vpr_types.h"
+#include "../include/util.h"
+#include "../include/graphics.h"
+#include "../include/vpr_types.h"
 /*#include "draw.h" */
 
 #ifndef NO_GRAPHICS

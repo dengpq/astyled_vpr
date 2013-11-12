@@ -868,8 +868,7 @@ static void build_opad_tnodes(int* blk_pin_to_tnode, float T_opad, int iblk)
     tnode_descript[to_node].iblk = iblk;
 }
 
-/* float  net_delay[0...num_nets-1][1...num_pins-1]       *
- * Initialize all tedges's delay in Timing_analyze_graph. */
+/* Initialize all tedges's delay in Timing_Analyze_Graph using float** net_delay. */
 void load_timing_graph_net_delays(float** net_delay)
 {
     /* Sets the delays of the inter-CLB nets to the values specified by        *
@@ -885,7 +884,7 @@ void load_timing_graph_net_delays(float** net_delay)
          * be in the same order as the pins of the net driven by the tnode.        */
         int ipin = 0;
         for (ipin = 1; ipin < net[inet].num_pins; ++ipin) {
-            tedge[ipin-1].Tdel = net_delay[inet][ipin];
+            tedge[ipin-1].Tdel = net_delay[inet][ipin]; /* tedge's Tdel*/
         }
     }
 } /* end of void load_timing_graph_net_delays(float** net_delay) */
@@ -1049,6 +1048,7 @@ float load_net_slack(float** net_slack, float target_cycle_time)
             for (iedge = 0; iedge < num_edges; ++iedge) {
                 to_node = tedge[iedge].to_node;
                 Tdel = tedge[iedge].Tdel; /* edge_delay_time */
+                /* calculate T_arr: actual arrived time */
                 tnode[to_node].T_arr = max(tnode[to_node].T_arr, T_arr + Tdel);
             }
         }
@@ -1080,6 +1080,7 @@ float load_net_slack(float** net_slack, float target_cycle_time)
                 for (iedge = 1; iedge < num_edges; ++iedge) {
                     to_node = tedge[iedge].to_node;
                     Tdel = tedge[iedge].Tdel;
+                    /* calculate T-req: required arrived time */
                     T_req = min(T_req, tnode[to_node].T_req - Tdel);
                 }
 
@@ -1088,15 +1089,17 @@ float load_net_slack(float** net_slack, float target_cycle_time)
         }
     } /* end of for (ilevel = num_tnode_levels - 1; ilevel >= 0; ilevel--) */
 
+    /* Then calculate all tedge's slakc in Timing_Analyze_Graph */
     compute_net_slacks(net_slack);
     return (T_crit);
 } /* end of float load_net_slack(float** net_slack, float target_cycle_time) */
 
+
+/* Puts the slack of each source-sink pair of block pins in net_slack.  *
+ * For a directed-edge in Timing_analyze_graph, <i,j>, its slack<i,j> = *
+ * T_req(j) - T_arr(i) - Tdel(i,j)                                      */
 static void compute_net_slacks(float** net_slack)
 {
-    /* Puts the slack of each source-sink pair of block pins in net_slack.  *
-     * For a directed-edge in Timing_analyze_graph, <i,j>, its slack<i,j> = *
-     * T_req(j) - T_arr(i) - Tdel(i,j)                                      */
     int inet = -1;
     for (inet = 0; inet < num_nets; ++inet) {
         int inode = net_to_driver_tnode[inet];
@@ -1113,8 +1116,7 @@ static void compute_net_slacks(float** net_slack)
             net_slack[inet][iedge + 1] = T_req - T_arr - Tdel;
         }
     }
-}
-
+} /* end of static void compute_net_slacks(float**  net_slack) */
 
 void print_critical_path(char* fname)
 {

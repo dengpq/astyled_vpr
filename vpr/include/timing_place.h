@@ -11,9 +11,10 @@ void alloc_lookups_and_criticalities(t_chan_width_dist chan_width_dist,
                                      t_subblock_data subblock_data,
                                      float***  net_delay, float***  net_slack);
 
-void load_criticalities(struct s_placer_opts placer_opts,
-                        float** net_slack, float d_max,
-                        float crit_exponent);
+/* calculate all tedges' timing_criticality depend on its slack, critical_delay *
+ * and crit_exponent                                                            */
+void load_criticalities(struct s_placer_opts placer_opts, float** net_slack,
+                        float crit_delay, float crit_exponent);
 
 void free_lookups_and_criticalities(float*** net_delay, float*** net_slack);
 

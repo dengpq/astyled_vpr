@@ -309,8 +309,8 @@ struct s_placer_opts {
     int   recompute_crit_iter;
     boolean enable_timing_computations;
     int   inner_loop_recompute_divider;
-    float td_place_exp_first;
-    float td_place_exp_last;
+    float td_place_exp_first; /* 1.0 */
+    float td_place_exp_last;  /* 8.0 */
 };
 
 

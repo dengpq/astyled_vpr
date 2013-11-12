@@ -26,7 +26,7 @@ CC = gcc
 WARN_FLAGS = -Wall -Wpointer-arith -Wcast-qual -Wstrict-prototypes -O -D__USE_FIXED_PROTOTYPES__ -ansi -pedantic -Wmissing-prototypes -Wshadow -Wcast-align -D_POSIX_SOURCE
 
 DEBUG_FLAGS = -g
-OPT_FLAGS = -O2
+OPT_FLAGS = -fPIC -O3
 
 #FLAGS = $(DEBUG_FLAGS)
 FLAGS = $(OPT_FLAGS)
@@ -78,3 +78,6 @@ path_length.o: path_length.c $(H)
 
 heapsort.o: heapsort.c $(H)
 	$(CC) -c $(FLAGS) heapsort.c
+
+clean:
+	rm *.o $(EXE)
